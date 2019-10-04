@@ -3610,7 +3610,6 @@ sub read_gcno($)
     } else {
         goto magic_error;
     }
-    print("Starting while loop\n");
 	# Read version
 	$version = read_gcno_value(*HANDLE, $big_endian, "compiler version");
 	$version = map_gcno_version($version);
@@ -3618,11 +3617,9 @@ sub read_gcno($)
 	# Skip stamp
 	graph_skip(*HANDLE, 4, "file timestamp") or goto incomplete;
     if ($version >= $GCOV_VERSION_8_0_0) {
-		print ("*****skipping!!!!!\n\r");
         graph_skip(*HANDLE, 4, "support unexecuted blocks flag")
 			or goto incomplete;
 	}
-    print("Graph read\n");
     while (!eof(HANDLE)) {
         my $next_pos;
         my $curr_pos;
