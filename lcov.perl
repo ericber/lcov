@@ -75,6 +75,7 @@ use Cwd qw /abs_path getcwd/;
 our $lcov_version    = 'LCOV version 1.11';
 our $lcov_url        = "http://ltp.sourceforge.net/coverage/lcov.php";
 our $tool_name        = basename($0);
+our $perl_exe         = "C://Perl//bin//Perl.exe";
 
 # Directory containing gcov kernel files
 our $gcov_dir;
@@ -174,6 +175,8 @@ our $no_compat_libtool;    # If set, indicates that libtool mode is to be disabl
 our $gcov_tool;
 our @opt_ignore_errors;
 our $initial;
+our @include_patterns; # List of source file patterns to include
+our @exclude_patterns; # List of source file patterns to exclude
 our $no_recursion = 0;
 our $to_package;
 our $from_package;
@@ -219,7 +222,8 @@ $SIG{'QUIT'} = \&abort_handler;
 $lcov_version =~ s/\$\s*Revision\s*:?\s*(\S+)\s*\$/$1/;
 
 # Add current working directory if $tool_dir is not already an absolute path
-if (!($tool_dir =~ /^\/(.*)$/) && !($tool_dir =~ /[a-zA-Z]:\\/))
+print ("tool_dir is $tool_dir\n");
+if (!($tool_dir =~ /^\/(.*)$/) && !($tool_dir =~ /[a-zA-Z]:\\/) && !($tool_dir =~ /[a-zA-Z]:\//))
 {
     $tool_dir = "$cwd/$tool_dir";
 }
@@ -293,6 +297,8 @@ if (!GetOptions("directory|d|di=s" => \@directory,
         "gcov-tool=s" => \$gcov_tool,
         "ignore-errors=s" => \@opt_ignore_errors,
         "initial|i" => \$initial,
+		"include=s" => \@include_patterns,
+		"exclude=s" => \@exclude_patterns,
         "no-recursion" => \$no_recursion,
         "to-package=s" => \$to_package,
         "from-package=s" => \$from_package,
@@ -810,7 +816,14 @@ sub lcov_geninfo(@)
     # Capture data
     info("Capturing coverage data from ".join(" ", @dir)."\n");
     # FR changed path from "$tool_dir/geninfo"
-    @param = ("$tool_dir/geninfo.perl", @dir);
+    @param = ("$tool_dir//geninfo.perl", @dir);
+
+    print("param are:\n");
+    foreach (@param)
+    {
+        print ("+$_\n");
+    }
+
     if ($output_filename)
     {
         @param = (@param, "--output-filename", $output_filename);
@@ -895,8 +908,18 @@ sub lcov_geninfo(@)
     if (defined($opt_config_file)) {
         @param = (@param, "--config-file", $opt_config_file);
     }
-    printf "@param";
-    system(@param) and exit($? >> 8);
+
+	foreach (@include_patterns) {
+		@param = (@param, "--include", $_);
+	}
+	foreach (@exclude_patterns) {
+		@param = (@param, "--exclude", $_);
+	}
+
+    my $Command = join(' ', $perl_exe, @param);
+
+    print "Command is: $Command \n";
+	system($Command) and exit($? >> 8);
 }
 
 #

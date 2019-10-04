@@ -50,13 +50,16 @@
 #   2014-09-12 / VaL Doroshchuk: ported to Windows
 
 use strict;
-use File::Basename; 
-# FR added use 
+use File::Basename;
+# FR added use
 use File::Find;
 use File::Spec::Functions qw /abs2rel catdir file_name_is_absolute splitdir
                   splitpath catpath/;
 use Getopt::Long;
 use Digest::MD5 qw(md5_base64);
+
+use Cwd;
+
 if( $^O eq "msys" )
 {
     require File::Spec::Win32;
@@ -66,9 +69,10 @@ if( $^O eq "msys" )
 our $lcov_version    = 'LCOV version 1.11';
 our $lcov_url        = "http://ltp.sourceforge.net/coverage/lcov.php";
 # @todo Needs to be changed
-our $gcov_tool        = "c:\\PATH_to\\gcov.exe";
+our $gcov_tool        = "c://MinGW//bin//gcov.exe";
 our $tool_name        = basename($0);
 
+our $GCOV_VERSION_8_0_0	   = 0x80000;
 our $GCOV_VERSION_4_7_0    = 0x40700;
 our $GCOV_VERSION_3_4_0    = 0x30400;
 our $GCOV_VERSION_3_3_0    = 0x30300;
@@ -154,6 +158,7 @@ our $UNNAMED_BLOCK    = -1;
 
 # Prototypes
 sub print_usage(*);
+sub transform_pattern($);
 sub gen_info($);
 sub process_dafile($$);
 sub match_filename($@);
@@ -181,7 +186,7 @@ sub sort_uniq(@);
 sub sort_uniq_lex(@);
 sub graph_cleanup($);
 sub graph_find_base($);
-sub graph_from_bb($$$);
+sub graph_from_bb($$$$);
 sub graph_add_order($$$);
 sub read_bb_word(*;$);
 sub read_bb_value(*;$);
@@ -196,8 +201,8 @@ sub read_gcno_word(*;$$);
 sub read_gcno_value(*$;$$);
 sub read_gcno_string(*$);
 sub read_gcno_lines_record(*$$$$$$);
-sub determine_gcno_split_crc($$$);
-sub read_gcno_function_record(*$$$$);
+sub determine_gcno_split_crc($$$$);
+sub read_gcno_function_record(*$$$$$);
 sub read_gcno($);
 sub get_gcov_capabilities();
 sub get_overall_line($$$$);
@@ -240,6 +245,9 @@ our $config;        # Configuration file contents
 our @ignore_errors;    # List of errors to ignore (parameter)
 our @ignore;        # List of errors to ignore (array)
 our $initial;
+our @include_patterns; # List of source file patterns to include
+our @exclude_patterns; # List of source file patterns to exclude
+our %excluded_files; # Files excluded due to include/exclude options
 our $no_recursion = 0;
 our $maxdepth;
 our $no_markers = 0;
@@ -262,7 +270,7 @@ our $rc_auto_base = 1;
 # FR added temporary file list
 our @filelist;
 
-our $cwd = `pwd`;
+our $cwd = getcwd();
 chomp($cwd);
 
 
@@ -371,6 +379,8 @@ if (!GetOptions("test-name|t=s" => \$test_name,
         "gcov-tool=s" => \$gcov_tool,
         "ignore-errors=s" => \@ignore_errors,
         "initial|i" => \$initial,
+		"include=s" => \@include_patterns,
+		"exclude=s" => \@exclude_patterns,
         "no-recursion" => \$no_recursion,
         "no-markers" => \$no_markers,
         "derive-func-data" => \$opt_derive_func_data,
@@ -404,6 +414,15 @@ else
         $opt_external = 0;
         $opt_no_external = undef;
     }
+	if(@include_patterns) {
+		# Need perlreg expressions instead of shell pattern
+		@include_patterns = map({ transform_pattern($_); } @include_patterns);
+	}
+
+	if(@exclude_patterns) {
+		# Need perlreg expressions instead of shell pattern
+		@exclude_patterns = map({ transform_pattern($_); } @exclude_patterns);
+	}
 }
 
 @data_directory = @ARGV;
@@ -609,10 +628,48 @@ sequentially.
       --config-file FILENAME        Specify configuration file location
       --rc SETTING=VALUE            Override configuration file setting
       --compat MODE=on|off|auto     Set compat MODE (libtool, hammer, split_crc)
+      --include PATTERN             Include files matching PATTERN
+      --exclude PATTERN             Exclude files matching PATTERN
 
 For more information see: $lcov_url
 END_OF_USAGE
     ;
+}
+#
+# transform_pattern(pattern)
+#
+# Transform shell wildcard expression to equivalent Perl regular expression.
+# Return transformed pattern.
+#
+
+sub transform_pattern($)
+{
+	my $pattern = $_[0];
+
+	# Escape special chars
+
+	$pattern =~ s/\\/\\\\/g;
+	$pattern =~ s/\//\\\//g;
+	$pattern =~ s/\^/\\\^/g;
+	$pattern =~ s/\$/\\\$/g;
+	$pattern =~ s/\(/\\\(/g;
+	$pattern =~ s/\)/\\\)/g;
+	$pattern =~ s/\[/\\\[/g;
+	$pattern =~ s/\]/\\\]/g;
+	$pattern =~ s/\{/\\\{/g;
+	$pattern =~ s/\}/\\\}/g;
+	$pattern =~ s/\./\\\./g;
+	$pattern =~ s/\,/\\\,/g;
+	$pattern =~ s/\|/\\\|/g;
+	$pattern =~ s/\+/\\\+/g;
+	$pattern =~ s/\!/\\\!/g;
+
+	# Transform ? => (.) and * => (.*)
+
+	$pattern =~ s/\*/\(\.\*\)/g;
+	$pattern =~ s/\?/\(\.\)/g;
+
+	return $pattern;
 }
 
 #
@@ -746,6 +803,11 @@ sub gen_info($)
         } else {
             process_dafile($file, $prefix);
         }
+	}
+	# Report whether files were excluded.
+	if (%excluded_files) {
+		info("Excluded data for %d files due to include/exclude options\n",
+			 scalar keys %excluded_files);
     }
 }
 
@@ -1178,6 +1240,40 @@ sub process_dafile($$)
             # Try to solve the ambiguity
             $source_filename = solve_ambiguous_match($gcov_file,
                         \@matches, \@gcov_content);
+		}
+
+		if (@include_patterns)
+		{
+			my $keep = 0;
+
+			foreach my $pattern (@include_patterns)
+			{
+				$keep ||= ($source_filename =~ (/^$pattern$/));
+			}
+
+			if (!$keep)
+			{
+				$excluded_files{$source_filename} = ();
+				unlink($gcov_file);
+				next;
+			}
+		}
+
+		if (@exclude_patterns)
+		{
+			my $exclude = 0;
+
+			foreach my $pattern (@exclude_patterns)
+			{
+				$exclude ||= ($source_filename =~ (/^$pattern$/));
+			}
+
+			if ($exclude)
+			{
+				$excluded_files{$source_filename} = ();
+				unlink($gcov_file);
+				next;
+			}
         }
 
         # Skip external files if requested
@@ -1381,9 +1477,16 @@ sub solve_relative_path($$)
 
     $result = $dir;
     # Prepend path if not absolute
-    if ($dir =~ /^[^\/]/)
+    #if ($dir =~ /^[^\/]/)
+    # starts with .. or .
+    if ($dir =~ /^\.+/)
     {
-        $result = "$path/$result";
+        print ("appending \n\r");
+        #$result = "$path/$result";
+    }
+    else
+    {
+        print ("Not appending \n\r");
     }
 
     # Remove //
@@ -1404,6 +1507,7 @@ sub solve_relative_path($$)
     # Remove preceding ..
     $result =~ s/^\/\.\.\//\//g;
 
+    print ("rturning $result\n");
     return $result;
 }
 
@@ -1841,6 +1945,9 @@ sub read_gcov_file($)
             {
                 my ($count, $line, $code) = ($1, $2, $3);
 
+                # Skip instance-specific counts
+				next if ($line == $last_line);
+
                 $last_line = $line;
                 $last_block = $UNNAMED_BLOCK;
                 # Check for exclusion markers
@@ -1869,6 +1976,9 @@ sub read_gcov_file($)
                         $exclude_branch = 0;
                     }
                 }
+
+                # Strip unexecuted basic block marker
+				$count =~ s/\*$//;
 
                 # <exec count>:<line number>:<source code>
                 if ($line eq "0")
@@ -2815,17 +2925,17 @@ sub graph_find_base($)
 # line data : [ line1, line2, ... ]
 #
 
-sub graph_from_bb($$$)
+sub graph_from_bb($$$$)
 {
-    my ($bb, $fileorder, $bb_filename) = @_;
-    my $graph = {};
-    my $instr = {};
-    my $basefile;
-    my $file;
-    my $func;
-    my $filedata;
-    my $linedata;
-    my $order;
+	my ($bb, $fileorder, $bb_filename, $fileorder_first) = @_;
+	my $graph = {};
+	my $instr = {};
+	my $basefile;
+	my $file;
+	my $func;
+	my $filedata;
+	my $linedata;
+	my $order;
 
     $basefile = graph_find_base($bb);
     # Create graph structure
@@ -2833,18 +2943,19 @@ sub graph_from_bb($$$)
         $filedata = $bb->{$func};
         $order = $fileorder->{$func};
 
-        # Account for lines in functions
-        if (defined($basefile) && defined($filedata->{$basefile})) {
-            # If the basefile contributes to this function,
-            # account this function to the basefile.
-            $graph->{$basefile}->{$func} = $filedata->{$basefile};
-        } else {
-            # If the basefile does not contribute to this function,
-            # account this function to the first file contributing
-            # lines.
-            $graph->{$order->[0]}->{$func} =
-                $filedata->{$order->[0]};
-        }
+		# Account for lines in functions
+		if (defined($basefile) && defined($filedata->{$basefile}) &&
+		    !$fileorder_first) {
+			# If the basefile contributes to this function,
+			# account this function to the basefile.
+			$graph->{$basefile}->{$func} = $filedata->{$basefile};
+		} else {
+			# If the basefile does not contribute to this function,
+			# account this function to the first file contributing
+			# lines.
+			$graph->{$order->[0]}->{$func} =
+				$filedata->{$order->[0]};
+		}
 
         foreach $file (keys(%{$filedata})) {
             # Account for instrumented lines
@@ -2996,7 +3107,7 @@ sub read_bb($)
         }
     }
     close(HANDLE);
-    ($instr, $graph) = graph_from_bb($bb, $fileorder, $bb_filename);
+	($instr, $graph) = graph_from_bb($bb, $fileorder, $bb_filename, 0);
     graph_cleanup($graph);
 
     return ($instr, $graph);
@@ -3184,7 +3295,7 @@ sub read_bbg($)
         }
     }
     close(HANDLE);
-    ($instr, $graph) = graph_from_bb($bb, $fileorder, $bbg_filename);
+	($instr, $graph) = graph_from_bb($bb, $fileorder, $bbg_filename, 0);
     graph_cleanup($graph);
 
     return ($instr, $graph);
@@ -3314,21 +3425,21 @@ sub read_gcno_lines_record(*$$$$$$)
 }
 
 #
-# determine_gcno_split_crc(handle, big_endian, rec_length)
+# determine_gcno_split_crc(handle, big_endian, rec_length, version)
 #
 # Determine if HANDLE refers to a .gcno file with a split checksum function
 # record format. Return non-zero in case of split checksum format, zero
 # otherwise, undef in case of read error.
 #
 
-sub determine_gcno_split_crc($$$)
+sub determine_gcno_split_crc($$$$)
 {
-    my ($handle, $big_endian, $rec_length) = @_;
-    my $strlen;
-    my $overlong_string;
+	my ($handle, $big_endian, $rec_length, $version) = @_;
+	my $strlen;
+	my $overlong_string;
 
-    return 1 if ($gcov_version >= $GCOV_VERSION_4_7_0);
-    return 1 if (is_compat($COMPAT_MODE_SPLIT_CRC));
+	return 1 if ($version >= $GCOV_VERSION_4_7_0);
+	return 1 if (is_compat($COMPAT_MODE_SPLIT_CRC));
 
     # Heuristic:
     # Decide format based on contents of next word in record:
@@ -3359,19 +3470,20 @@ sub determine_gcno_split_crc($$$)
 }
 
 #
-# read_gcno_function_record(handle, graph, big_endian, rec_length)
+# read_gcno_function_record(handle, graph, big_endian, rec_length, version)
 #
 # Read a gcno format function record from handle and add the relevant data
-# to graph. Return (filename, function) on success, undef on error. 
+# to graph. Return (filename, function, artificial) on success, undef on error.
 #
 
-sub read_gcno_function_record(*$$$$)
+sub read_gcno_function_record(*$$$$$)
 {
-    my ($handle, $bb, $fileorder, $big_endian, $rec_length) = @_;
-    my $filename;
-    my $function;
-    my $lineno;
-    my $lines;
+	my ($handle, $bb, $fileorder, $big_endian, $rec_length, $version) = @_;
+	my $filename;
+	my $function;
+	my $lineno;
+	my $lines;
+	my $artificial;
 
     graph_expect("function record");
     # Skip ident and checksum
@@ -3379,7 +3491,8 @@ sub read_gcno_function_record(*$$$$)
     # Determine if this is a function record with split checksums
     if (!defined($gcno_split_crc)) {
         $gcno_split_crc = determine_gcno_split_crc($handle, $big_endian,
-                               $rec_length);
+							   $rec_length,
+							   $version);
         return undef if (!defined($gcno_split_crc));
     }
     # Skip cfg checksum word in case of split checksums
@@ -3388,6 +3501,11 @@ sub read_gcno_function_record(*$$$$)
     graph_expect("function name");
     $function = read_gcno_string($handle, $big_endian);
     return undef if (!defined($function));
+    if ($version >= $GCOV_VERSION_8_0_0) {
+		$artificial = read_gcno_value($handle, $big_endian,
+					      "compiler-generated entity flag");
+		return undef if (!defined($artificial));
+	}
     # Read filename
     graph_expect("filename");
     $filename = read_gcno_string($handle, $big_endian);
@@ -3395,11 +3513,52 @@ sub read_gcno_function_record(*$$$$)
     # Read first line number
     $lineno = read_gcno_value($handle, $big_endian, "initial line number");
     return undef if (!defined($lineno));
+    # Skip column and ending line number
+	if ($version >= $GCOV_VERSION_8_0_0) {
+		graph_skip($handle, 4, "column number") or return undef;
+		graph_skip($handle, 4, "ending line number") or return undef;
+	}
     # Add to list
     push(@{$bb->{$function}->{$filename}}, $lineno);
     graph_add_order($fileorder, $function, $filename);
 
-    return ($filename, $function);
+	return ($filename, $function, $artificial);
+}
+
+#
+# map_gcno_version
+#
+# Map version number as found in .gcno files to the format used in geninfo.
+#
+
+sub map_gcno_version($)
+{
+	my ($version) = @_;
+	my ($a, $b, $c);
+	my ($major, $minor);
+
+	$a = $version >> 24;
+	$b = $version >> 16 & 0xff;
+	$c = $version >> 8 & 0xff;
+
+	if ($a < ord('A')) {
+		$major = $a - ord('0');
+		$minor = ($b - ord('0')) * 10 + $c - ord('0');
+	} else {
+		$major = ($a - ord('A')) * 10 + $b - ord('0');
+		$minor = $c - ord('0');
+	}
+
+	return $major << 16 | $minor << 8;
+}
+
+sub remove_fn_from_hash($$)
+{
+	my ($hash, $fns) = @_;
+
+	foreach my $fn (@$fns) {
+		delete($hash->{$fn});
+	}
 }
 
 #
@@ -3432,6 +3591,9 @@ sub read_gcno($)
     my $instr;
     my $graph;
     my $filelength;
+	my $version;
+	my $artificial;
+	my @artificial_fns;
     local *HANDLE;
 
     open(HANDLE, "<", $gcno_filename) or goto open_error;
@@ -3448,8 +3610,19 @@ sub read_gcno($)
     } else {
         goto magic_error;
     }
-    # Skip version and stamp
-    graph_skip(*HANDLE, 8, "version and stamp") or goto incomplete;
+    print("Starting while loop\n");
+	# Read version
+	$version = read_gcno_value(*HANDLE, $big_endian, "compiler version");
+	$version = map_gcno_version($version);
+	debug(sprintf("found version 0x%08x\n", $version));
+	# Skip stamp
+	graph_skip(*HANDLE, 4, "file timestamp") or goto incomplete;
+    if ($version >= $GCOV_VERSION_8_0_0) {
+		print ("*****skipping!!!!!\n\r");
+        graph_skip(*HANDLE, 4, "support unexecuted blocks flag")
+			or goto incomplete;
+	}
+    print("Graph read\n");
     while (!eof(HANDLE)) {
         my $next_pos;
         my $curr_pos;
@@ -3477,33 +3650,37 @@ sub read_gcno($)
         }
         # Process record
         if ($tag == $tag_function) {
-            ($filename, $function) = read_gcno_function_record(
-                *HANDLE, $bb, $fileorder, $big_endian,
-                $length);
-            goto incomplete if (!defined($function));
-        } elsif ($tag == $tag_lines) {
-            # Read lines record
-            $filename = read_gcno_lines_record(*HANDLE,
-                    $gcno_filename, $bb, $fileorder,
-                    $filename, $function,
-                    $big_endian);
-            goto incomplete if (!defined($filename));
-        } else {
-            # Skip record contents
-            graph_skip(*HANDLE, $length, "unhandled record")
-                or goto incomplete;
-        }
-        # Ensure that we are at the start of the next record
-        $curr_pos = tell(HANDLE);
-        goto tell_error if ($curr_pos == -1);
-        next if ($curr_pos == $next_pos);
-        goto record_error if ($curr_pos > $next_pos);
-        graph_skip(*HANDLE, $next_pos - $curr_pos,
-               "unhandled record content")
-            or goto incomplete;
-    }
-    close(HANDLE);
-    ($instr, $graph) = graph_from_bb($bb, $fileorder, $gcno_filename);
+			($filename, $function, $artificial) =
+				read_gcno_function_record(
+				*HANDLE, $bb, $fileorder, $big_endian,
+				$length, $version);
+			goto incomplete if (!defined($function));
+			push(@artificial_fns, $function) if ($artificial);
+		} elsif ($tag == $tag_lines) {
+			# Read lines record
+			$filename = read_gcno_lines_record(*HANDLE,
+					$gcno_filename, $bb, $fileorder,
+					$filename, $function, $big_endian);
+			goto incomplete if (!defined($filename));
+		} else {
+			# Skip record contents
+			graph_skip(*HANDLE, $length, "unhandled record")
+				or goto incomplete;
+		}
+		# Ensure that we are at the start of the next record
+		$curr_pos = tell(HANDLE);
+		goto tell_error if ($curr_pos == -1);
+		next if ($curr_pos == $next_pos);
+		goto record_error if ($curr_pos > $next_pos);
+		graph_skip(*HANDLE, $next_pos - $curr_pos,
+			   "unhandled record content")
+			or goto incomplete;
+	}
+	close(HANDLE);
+	# Remove artificial functions from result data
+	remove_fn_from_hash($bb, \@artificial_fns);
+	remove_fn_from_hash($fileorder, \@artificial_fns);
+	($instr, $graph) = graph_from_bb($bb, $fileorder, $gcno_filename, 1);
     graph_cleanup($graph);
 
     return ($instr, $graph);
