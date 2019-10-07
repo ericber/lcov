@@ -10,7 +10,7 @@
 #   This program is distributed in the hope that it will be useful, but
 #   WITHOUT ANY WARRANTY;  without even the implied warranty of
 #   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#   General Public License for more details.                 
+#   General Public License for more details.
 #
 #   You should have received a copy of the GNU General Public License
 #   along with this program;  if not, write to the Free Software
@@ -551,7 +551,7 @@ else
 {
     $data_file_extension = ".gcda";
     $graph_file_extension = ".gcno";
-}    
+}
 
 # Check output filename
 if (defined($output_filename) && ($output_filename ne "-"))
@@ -565,8 +565,9 @@ if (defined($output_filename) && ($output_filename ne "-"))
 
     # Make $output_filename an absolute path because we're going
     # to change directories while processing files
-    if (!($output_filename =~ /^\/(.*)$/))
+    if (!($output_filename =~ /^\/(.*)$/) && !($output_filename =~/[a-zA-Z]:\\*\/*/))
     {
+        print ("appending!!!!! $output_filename\n\r");
         $output_filename = $cwd."/".$output_filename;
     }
 }
@@ -982,7 +983,7 @@ sub process_dafile($$)
 
     $source_dir = $da_dir;
     if (is_compat($COMPAT_MODE_LIBTOOL)) {
-        # Avoid files from .libs dirs      
+        # Avoid files from .libs dirs
         $source_dir =~ s/\.libs$//;
     }
 
@@ -1046,11 +1047,11 @@ sub process_dafile($$)
         {
             ($instr, $graph) = read_bb($bb_filename);
         }
-    } 
+    }
     else
     {
         ($instr, $graph) = read_gcno($bb_filename);
-    } 
+    }
 
     # Try to find base directory automatically if requested by user
     if ($rc_auto_base) {
@@ -1069,7 +1070,7 @@ sub process_dafile($$)
     if ($object_dir ne $da_dir)
     {
         # Need to create link to data file in $object_dir
-        system("ln", "-s", $da_filename, 
+        system("ln", "-s", $da_filename,
                "$object_dir/$da_basename$data_file_extension")
             and die ("ERROR: cannot create link $object_dir/".
                  "$da_basename$data_file_extension!\n");
@@ -1461,11 +1462,11 @@ sub solve_relative_path($$)
             # $uppercase_volume is not used any further
             ( $uppercase_volume, $directories, $filename ) = File::Spec::Win32->splitpath( $dir );
             @dirs = File::Spec::Win32->splitdir( $directories );
-            
+
             # prepend volume, since in msys C: is always mounted to /c
             $volume =~ s|^([a-zA-Z]+):|/\L$1\E|;
             unshift( @dirs, $volume );
-            
+
             # transform to Unix style '/' path
             $directories = File::Spec->catdir( @dirs );
             $dir = File::Spec->catpath( '', $directories, $filename );
@@ -1564,7 +1565,7 @@ entry:
 # by comparing source code provided in the GCOV file with that of the files
 # in MATCHES. REL_FILENAME identifies the relative filename of the gcov
 # file.
-# 
+#
 # Return the one real match or die if there is none.
 #
 
@@ -2144,7 +2145,7 @@ sub system_no_output($@)
     # Redirect to /dev/null
     ($mode & 1) && open(STDOUT, ">", "/dev/null");
     ($mode & 2) && open(STDERR, ">", "/dev/null");
- 
+
     debug("system(".join(' ', @_).")\n");
     system(@_);
     $result = $?;
@@ -2156,7 +2157,7 @@ sub system_no_output($@)
     # Restore old handles
     ($mode & 1) && open(STDOUT, ">>&", "OLD_STDOUT");
     ($mode & 2) && open(STDERR, ">>&", "OLD_STDERR");
- 
+
     return $result;
 }
 
@@ -2216,7 +2217,7 @@ sub read_config($)
 #
 # where KEY_STRING is a keyword and VAR_REF is a reference to an associated
 # variable. If the global configuration hashes CONFIG or OPT_RC contain a value
-# for keyword KEY_STRING, VAR_REF will be assigned the value for that keyword. 
+# for keyword KEY_STRING, VAR_REF will be assigned the value for that keyword.
 #
 
 sub apply_config($)
@@ -2404,7 +2405,7 @@ sub process_graphfile($$)
 
     $source_dir = $graph_dir;
     if (is_compat($COMPAT_MODE_LIBTOOL)) {
-        # Avoid files from .libs dirs      
+        # Avoid files from .libs dirs
         $source_dir =~ s/\.libs$//;
     }
 
@@ -2428,7 +2429,7 @@ sub process_graphfile($$)
         {
             ($instr, $graph) = read_bb($graph_filename);
         }
-    } 
+    }
     else
     {
         ($instr, $graph) = read_gcno($graph_filename);
