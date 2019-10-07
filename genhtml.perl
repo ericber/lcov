@@ -70,7 +70,7 @@ use File::Basename;
 use File::Temp qw(tempfile);
 use Getopt::Long;
 use Digest::MD5 qw(md5_base64);
-use Cwd;
+use Cwd qw /abs_path getcwd/;
 
 
 # Global constants
@@ -1575,7 +1575,7 @@ sub read_info_file($)
                 # Filename information found
                 # Retrieve data for new entry
                 $filename = $1;
-
+                $filename = abs_path($filename);
                 $data = $result{$filename};
                 ($testdata, $sumcount, $funcdata, $checkdata,
                  $testfncdata, $sumfnccount, $testbrdata,
