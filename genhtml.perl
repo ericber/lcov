@@ -3705,7 +3705,12 @@ sub write_file_table_entry(*$$$@)
     my ($handle, $base_dir, $filename, $page_link, @entries) = @_;
     my $file_code;
     my $entry;
+
+
     my $esc_filename = escape_html($filename);
+
+    $filename =~ s/^[a-zA-Z]*:/\./g;
+    $page_link =~ s/[a-zA-Z]*:/\./g;
 
     # Add link to source if provided
     if (defined($page_link) && $page_link ne "") {
