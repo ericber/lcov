@@ -71,7 +71,7 @@ use File::Temp qw(tempfile);
 use Getopt::Long;
 use Digest::MD5 qw(md5_base64);
 use Cwd qw /abs_path getcwd/;
-
+use File::Path qw(make_path remove_tree);
 
 # Global constants
 our $title            = "LCOV - code coverage report";
@@ -2656,9 +2656,11 @@ sub get_date_string()
 sub create_sub_dir($)
 {
     my ($dir) = @_;
-
-    system("mkdir", "-p" ,$dir)
-        and die("ERROR: cannot create directory $dir!\n");
+	make_path($dir, , {error => \my $err});
+	if ($err && @$err)
+	{
+		die("ERROR: cannot create directory $dir!\n");
+	}
 }
 
 
