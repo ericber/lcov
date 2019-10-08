@@ -163,7 +163,7 @@ our $version;        # Version option flag
 our $convert_filenames;    # If set, convert filenames when applying diff
 our $strip;        # If set, strip leading directories when applying diff
 our $temp_dir_name;    # Name of temporary directory
-our $cwd = `pwd`;    # Current working directory
+our $cwd = getcwd();    # Current working directory
 our $to_file;        # If set, indicates that output is written to a file
 our $follow;        # If set, indicates that find shall follow links
 our $diff_path = "";    # Path removed from tracefile when applying diff

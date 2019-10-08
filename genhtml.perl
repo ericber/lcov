@@ -306,7 +306,7 @@ our $lcov_func_coverage = 1;
 our $lcov_branch_coverage = 0;
 our $rc_desc_html = 0;    # lcovrc: genhtml_desc_html
 
-our $cwd = `pwd`;    # Current working directory
+our $cwd = getcwd();
 chomp($cwd);
 our $tool_dir = dirname($0);    # Directory where genhtml tool is installed
 
