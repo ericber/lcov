@@ -265,7 +265,7 @@ our %opt_rc;
 our %compat_value;
 our $gcno_split_crc;
 our $func_coverage = 1;
-our $br_coverage = 0;
+our $br_coverage = 1;
 our $rc_auto_base = 1;
 # FR added temporary file list
 our @filelist;
@@ -1482,12 +1482,7 @@ sub solve_relative_path($$)
     # starts with .. or .
     if ($dir =~ /^\.+/)
     {
-        print ("appending \n\r");
         #$result = "$path/$result";
-    }
-    else
-    {
-        print ("Not appending \n\r");
     }
 
     # Remove //
@@ -1508,7 +1503,6 @@ sub solve_relative_path($$)
     # Remove preceding ..
     $result =~ s/^\/\.\.\//\//g;
 
-    print ("rturning $result\n");
     return $result;
 }
 

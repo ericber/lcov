@@ -1314,6 +1314,7 @@ sub write_function_page($$$$$$$$$$$$$$$$$$)
     } else {
         $filename = "$rel_dir/$base_name.func-sort-c.$html_ext";
     }
+    printf ("creating file: $filename \n");
     html_create(*HTML_HANDLE, $filename);
     $pagetitle = "LCOV - $title - $trunc_dir/$base_name - functions";
     write_html_prolog(*HTML_HANDLE, $base_dir, $pagetitle);

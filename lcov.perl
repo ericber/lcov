@@ -75,7 +75,7 @@ use Cwd qw /abs_path getcwd/;
 our $lcov_version    = 'LCOV version 1.11';
 our $lcov_url        = "http://ltp.sourceforge.net/coverage/lcov.php";
 our $tool_name        = basename($0);
-our $perl_exe         = "C://Perl//bin//Perl.exe";
+our $perl_exe         = $ENV{'PERL_EXE'};;
 
 # Directory containing gcov kernel files
 our $gcov_dir;
@@ -206,7 +206,7 @@ our $fn_overall_hit;
 our $br_overall_found;
 our $br_overall_hit;
 our $func_coverage = 1;
-our $br_coverage = 0;
+our $br_coverage = 1;
 
 
 #
