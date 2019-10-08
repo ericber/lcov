@@ -1,5 +1,4 @@
 @echo off
-::This script has to be called from nrf5x-sensor-hub/tools/nrf5x-sensor-hub-unit-tests/out folder
 
 IF DEFINED PERL_EXE (
 echo PERL_EXE defined as %PERL_EXE%
