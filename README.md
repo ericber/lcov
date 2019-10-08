@@ -3,27 +3,19 @@ Ported to Windows LCOV Code Coverage tool
 
 [LCOV] (http://ltp.sourceforge.net/coverage/lcov.php) is a graphical front-end for GCC's coverage testing tool gcov. It collects gcov data for multiple source files and creates HTML pages containing the source code annotated with coverage information. It also adds overview pages for easy navigation within the file structure. LCOV supports statement, function and branch coverage measurement.
 
+This a fork from valbok. I merged GCC8 support from the linux version. I fixed issues with relative paths in complex projects. The HTML generator now creates all file in one single folder. It also support MINGWIN shell (linux style shell on windows). I also in improved the batch file to define ENV variable used byt the perl scripts.
+
 Installation
 ============
 
 0. Install Perl if not installed. For example to **C:\Perl**
-1. Open Windows Command Processor and run to create association (do not forget to change path to **perl.exe**)
-    
-    ```
-    assoc .perl=Perl.File
-    ftype Perl.File=C:\Perl\bin\perl.exe "%1" %* 
-    ```
-
-2. Define correct path of GCOV executable in **geninfo.perl**:
-      
-    ```
-    our $gcov_tool = "C:\\CORRECT_PATH_TO\\gcov.exe";
-    ```
-
-3. Define correct path of Perl executable in **lcov.bat**:
+1. Define correct path of Perl and gcov executables in **lcov.bat**:
 
     ```
-    set perl=C:\CORRECT_PATH_TO\Perl.exe
+    set PERL_EXE=C://Perl//bin//Perl.exe
+    ```
+    ```
+    set GCOV_EXE=c://MinGW//bin//gcov.exe
     ```
 
 HOW TO USE
