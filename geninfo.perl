@@ -53,7 +53,7 @@ use strict;
 use File::Basename;
 # FR added use
 use File::Find;
-use File::Spec::Functions qw /abs2rel catdir file_name_is_absolute splitdir
+use File::Spec::Functions qw /abs2rel rel2abs catdir file_name_is_absolute splitdir
                   splitpath catpath/;
 use Getopt::Long;
 use Digest::MD5 qw(md5_base64);
@@ -1288,7 +1288,8 @@ sub process_dafile($$)
         }
 
         # Write absolute path of source file
-        printf(INFO_HANDLE "SF:%s\n", $source_filename);
+        my $sf_absolute_path = rel2abs($source_filename);
+        printf(INFO_HANDLE "SF:%s\n", $sf_absolute_path);
 
         # If requested, derive function coverage data from
         # line coverage data of the first line of a function
